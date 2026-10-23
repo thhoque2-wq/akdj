@@ -2,10 +2,6 @@ name: Build Turbo Download Manager APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "TurboDownloadManager-project.zip"
-      - ".github/workflows/build.yml"
 
 permissions:
   contents: read
@@ -20,74 +16,67 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
-          sdkmanager --licenses <<< "y" || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Find and extract project ZIP
+      - name: Find project ZIP
         shell: bash
         run: |
           set -e
 
-          ZIP_FILE="$(find . -maxdepth 2 -type f -name 'TurboDownloadManager-project.zip' | head -n 1)"
+          ZIP_FILE="$(find . -type f -name 'TurboDownloadManager-project.zip' | head -n 1)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: TurboDownloadManager-project.zip was not found."
+            echo "ERROR: TurboDownloadManager-project.zip not found."
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
+          echo "ZIP found: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
+      - name: Extract project
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf extracted
           mkdir -p extracted
+
           unzip -q "$ZIP_FILE" -d extracted
 
           PROJECT_DIR="$(find extracted -type f -name 'settings.gradle.kts' -printf '%h\n' | head -n 1)"
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project was not found inside the ZIP."
+            echo "ERROR: Android project not found inside ZIP."
+            find extracted -maxdepth 5 -type f | sort
             exit 1
           fi
 
+          echo "Project found: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project found at: $PROJECT_DIR"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.6.0"
 
-      - name: Verify project
+      - name: Build APK
         shell: bash
         run: |
           set -e
-          cd "$PROJECT_DIR"
 
-          echo "Project directory:"
-          pwd
-
-          echo "Project files:"
-          find . -maxdepth 2 -type f | sort
-
-          echo "Checking Gradle project..."
-          gradle --version
-
-      - name: Build Debug APK
-        shell: bash
-        run: |
-          set -e
           cd "$PROJECT_DIR"
 
           gradle \
@@ -96,7 +85,7 @@ jobs:
             --warning-mode all \
             assembleDebug
 
-      - name: Verify APK
+      - name: Find APK
         shell: bash
         run: |
           set -e
@@ -111,13 +100,13 @@ jobs:
             exit 1
           fi
 
-          echo "APK generated successfully:"
+          echo "APK generated:"
           ls -lh "$APK_FILE"
 
           mkdir -p artifact
-          cp "$APK_FILE" artifact/TurboDownloadManager-debug.apk
+          cp "$APK_FILE" "artifact/TurboDownloadManager-debug.apk"
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TurboDownloadManager-debug
